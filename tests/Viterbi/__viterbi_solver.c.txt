@@ -1,0 +1,264 @@
+#include "../../lib/DFT.h"
+//#include "Matrix.h"
+
+#include <stdio.h>
+#include <math.h>
+#include <float.h>
+#include <stdlib.h>
+
+#define BUFFER_SIZE (1<<5)
+
+void find_optimum(int latency, int ir_size);
+
+int main(void)
+{
+  int latency = 256;
+  int maxlen  = 131072;
+  int len = latency;
+  
+  while(len <= maxlen)
+    {
+      find_optimum(latency, len);
+      len += latency;
+    }
+/*
+  int latency = 127;
+  int maxlat  = 1024;
+  int len = 10 * 44100;
+  
+  while(latency <= maxlat)
+    {
+      find_optimum(latency, len);
+      latency *= 2;
+    }
+*/
+}
+
+
+#define IX(vals, cols, row, col) vals[(row) * (cols) + (col)]
+
+int get_p(int i)
+{
+  int p = 0;
+  i += 1;
+  
+  while(i > 0)
+    {
+      i >>= 1;
+      ++p;
+    }
+  
+  return 1 << (p-1);
+}
+
+void find_optimum(int latency, int ir_size)
+{
+  //if (ir_size <= 0) return NULL;
+  
+  float k = 1.5;
+  int maxnum_segments = 32; //usually 4 is more than enough
+  int t, T = ir_size / latency;
+  if(ir_size % latency) ++T;
+  int T_minus_1 = T - 1;
+  int num_segments;
+  int block_sizes[maxnum_segments];
+  int blocks_per_segment[maxnum_segments];
+  
+  //Matrix*  cost_matrix = matrix_new(T, T);
+  unsigned short* cost_matrix = (unsigned short*)calloc(T*T, sizeof(*cost_matrix));
+  
+  if(cost_matrix == NULL)
+    //{fprintf(stderr, "unable to init matrix\r\n"); return;}
+    {perror("unable to init matrix\r\n"); return;}
+  
+  int i, j, p1, q1, p2, q2;
+  
+  unsigned short min_cost, min_index;
+  
+  int accumulated_cost = min_cost = 4*k*log2(2*latency) + 4;
+  IX(cost_matrix, T, 0, 0) = accumulated_cost;
+
+  accumulated_cost += 4;
+  IX(cost_matrix, T, 0, 1) = accumulated_cost;
+  IX(cost_matrix, T, T_minus_1-1, T_minus_1-1) = 0;
+
+  //calculate transition costs and indices
+  //put the costs in the upper traingle at index y, x,
+  //put the indices in the lower triangle at index T-1-y, T-1-x
+  for(t=2; t<T; t++)
+    {
+      p2 = q2 = 1;
+      
+      for(i=0; i<t; i++)
+        {
+          min_cost = 0xFFFF;//FLT_MAX;
+          //min_index = -1;
+  
+          p1 = q1 = 1;
+          
+          for(j=0; j<t-1; j++)
+            {
+              accumulated_cost = IX(cost_matrix, T, j, t-1);
+              
+              //subsequent fractions of the same block
+              if((p1 == p2) && ((q1+1) == q2))
+                accumulated_cost += 0;
+                
+              //append another block of the same size
+              else if((p1 == p2) && (q2==1))
+                accumulated_cost += 4;
+                
+              //start a new larger block
+              else if((p1 < p2) && (q2==1))
+                accumulated_cost += 4*k*log2(2*latency*p2) + 4;
+              
+              //illegal transition
+              else
+                accumulated_cost = 0xFFFF;//FLT_MAX;
+              
+              if(accumulated_cost < min_cost)
+                {
+                  min_cost = accumulated_cost;
+                  min_index = j;
+                }
+                
+              ++q1; if(q1 > p1) {p1*=2; q1=1;}
+            }
+          
+          IX(cost_matrix, T, i, t) = min_cost;
+          IX(cost_matrix, T, T_minus_1-i, T_minus_1-t) = min_index;
+    
+          ++q2; if(q2 > p2) {p2*=2; q2=1;}
+        }
+    }
+  
+  //find min cost in the last column
+  if(T > 1)
+    {
+      min_cost = 0xFFFF;//FLT_MAX;
+      //min_index = -1;
+    }
+  for(i=0; i<T-1; i++)
+    {
+      accumulated_cost = IX(cost_matrix, T, i, T_minus_1);
+      if(accumulated_cost < min_cost)
+        {
+          min_cost = accumulated_cost;
+          min_index = i;
+        }
+    }
+  
+  //trace backwards to get the min indices
+  //store the winners in the first row of matrix
+  //since we are done with it
+  for(t=T_minus_1; t>0; t--)
+    {
+      IX(cost_matrix, T, 0, T_minus_1-t) = min_index;
+      min_index = IX(cost_matrix, T, T_minus_1-min_index, T_minus_1-t);
+    }
+    
+
+  //forward pass to get final block sizes and blocks per segment
+  num_segments = 1;
+  block_sizes[0] = latency;
+  blocks_per_segment[0] = 1;
+  
+  if(T > 1)
+    ++blocks_per_segment[0];
+  
+  p1 = q1 = 1;
+  
+  for(t=2; t<T; t++)
+    {
+      min_index = IX(cost_matrix, T, 0, T_minus_1-t);
+      p2 = get_p(min_index);
+      q2 = min_index - p2 + 2;
+      
+      //subsequent fractions of the same block
+      if((p1 == p2) && ((q1+1) == q2))
+        {
+          // do nothing.
+        }
+    
+      //append another block of the same size
+      else if((p1 == p2) && (q2==1))
+        ++blocks_per_segment[num_segments-1];
+    
+      //start a new larger block
+      else if((p1 < p2) && (q2==1))
+        {
+          if((num_segments + 1) < maxnum_segments)
+            {
+              block_sizes[num_segments] = p2 * latency;
+              blocks_per_segment[num_segments] = 1;
+              ++num_segments;
+            }
+          else
+            fprintf(stderr, "ran out of space, increase maxnum_segments in veterbi_solver.c");
+        }
+        
+      p1 = p2; q1 = q2;
+    }
+    
+  fprintf(stderr, "ir_size: %i x %i = %i, partition: [", latency, T, ir_size);
+  for(i=0; i<num_segments; i++)
+    {
+      fprintf(stderr, "%i x %i", blocks_per_segment[i], block_sizes[i]);
+      if(i < num_segments-1)
+        fprintf(stderr, " --> ");
+    }
+  fprintf(stderr, "], cost: %i\r\n", min_cost);
+  
+  free(cost_matrix);
+}
+
+/*
+
+
+#define CONV_MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define CONV_MIN(x, y) (((x) < (y)) ? (x) : (y))
+
+
+
+void find_optimum(int latency, int ir_size)
+{
+  float k = 1.5;
+  int maxnum_segments = 32; //usually 4 is more than enough
+  int t=1, T = ir_size / latency;
+  if(ir_size % latency) ++T;
+  int num_segments = 1,
+  int block_sizes[maxnum_segments];
+  int blocks_per_segment[maxnum_segments];
+  int y = 1;
+  
+  int number_of_stays;
+  float cost_of_staying;
+  int increase_amount;
+  float cost_of_increasing;
+  
+  block_sizes[0] = t * latency;
+  blocks_per_segment[0] = 2;
+  
+  ++t; // t = 2;
+  
+  while(t<T)
+    {
+      increase_amount = t / y; //floor (integer division)
+      //decrease the increase amount if IR is not long enough
+      number_of_stays = CONV_MIN(2*y, T-t);
+      cost_of_staying = 4 * number_of_stays;
+      cost_of_increasing = 4 * k * log2(2*y*latency) + 4;
+      
+      if(cost_of_staying > cost_of_increasing)
+        {
+          
+        }
+      else
+        {
+        
+        }
+      
+    }
+  
+}
+*/
