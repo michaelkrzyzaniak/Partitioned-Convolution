@@ -58,6 +58,7 @@ void output_callback(void* SELF, dft_sample_t* output, int num_samples)
 
 ## Constructors, Destructor
 ##### Overview
+These functions create a Convolution object with the specified impules response, partitioning, and latency. These values are static and cannot be changed after the object has been created. After creation, the object can then be used to process input audio data.
 
 ##### New Uniform Partitioning
 ```c
@@ -72,7 +73,7 @@ This function creates a new convolution object with uniform partitioning.
 Args:
 * ir: a buffer containing the impulse response. It may be of any length. dft_sample_t is float. Only Mono IRs are supported.
 * ir_len: the number of samples in the impulse response.
-* latency: the desired latecncy of the algorithm. This will also be the block size used in the convolution. Decreasing the latency increases the amount of time it takes the algorithm to process a given amount of input. This value must be a power of 2.
+* latency: the desired latecncy of the algorithm, in number of samples. This will also be the block size used in the convolution. Decreasing the latency increases the amount of time it takes the algorithm to process a given amount of input. This value must be a power of 2.
 * output_callback: a function that you supply that will be called each time the algorithm has finished processing a bit of the input data.
 * callback_self: a pointer to anything, or NULL, that will be passed back as the first argument to output_callback.
 
@@ -93,7 +94,7 @@ This function creates a new convolution object with non-uniform partitioning. It
 Args:
 * ir: a buffer containing the impulse response. It may be of any length. dft_sample_t is float. Only Mono IRs are supported.
 * ir_len: the number of samples in the impulse response.
-* latency: the desired latecncy of the algorithm. This will also be the block size used in the head segment of the convolution. Decreasing the latency increases the amount of time it takes the algorithm to process a given amount of input. This value must be a power of 2.
+* latency: the desired latecncy of the algorithm, in number of samples. This will also be the block size used in the head segment of the convolution. Decreasing the latency increases the amount of time it takes the algorithm to process a given amount of input. This value must be a power of 2.
 * output_callback: a function that you supply that will be called each time the algorithm has finished processing a bit of the input data.
 * callback_self: a pointer to anything, or NULL, that will be passed back as the first argument to output_callback.
 
@@ -117,7 +118,7 @@ Args:
 * ir: a buffer containing the impulse response. It may be of any length. dft_sample_t is float. Only Mono IRs are supported.
 * ir_len: the number of samples in the impulse response.
 * num_segments: the number of segments in the partitioning
-* block_sizes: an array of length num_segments, specifying the block sizes for each segment. The block sizes must all be powers of 2 and must increase in size
+* block_sizes: an array of length num_segments, specifying the block sizes for each segment. The block sizes must all be powers of 2 and must increase in size. The first block size specifies the latency of the algorithm in samples.
 * blocks_per_segment: an array of length num_segments specifying the number of blocks in each segment. Note that a block_size of length N must not occur eariler than N samples into the impulse response. e.g. One block of size 256 followed by a block of size 512 is not valid. 2 blocks of 256 followed by one of 512 is.
 * output_callback: a function that you supply that will be called each time the algorithm has finished processing a bit of the input data.
 * callback_self: a pointer to anything, or NULL, that will be passed back as the first argument to output_callback.
@@ -139,9 +140,112 @@ This implements the Viterbi algorithm in the op cit García paper to find the op
 Args:
 * ir: a buffer containing the impulse response. It may be of any length. dft_sample_t is float. Only Mono IRs are supported.
 * ir_len: the number of samples in the impulse response.
-* latency: the desired latecncy of the algorithm. This will also be the block size used in the head segment of the convolution. Decreasing the latency increases the amount of time it takes the algorithm to process a given amount of input. This value must be a power of 2.
+* latency: the desired latecncy of the algorithm, in number of samples. This will also be the block size used in the head segment of the convolution. Decreasing the latency increases the amount of time it takes the algorithm to process a given amount of input. This value must be a power of 2.
 * output_callback: a function that you supply that will be called each time the algorithm has finished processing a bit of the input data.
 * callback_self: a pointer to anything, or NULL, that will be passed back as the first argument to output_callback.
 
 Returns: A fully initalized Convolution object, or NULL on failure.
+
+
+##### Convolution Destory
+```c
+Convolution*                                      conv_destroy          (Convolution* self);
+
+```
+Destroy the specified convolution object and free all of the memory associated with it
+
+Args:
+* self: The Convolution object to be destroyed
+
+Returns: NULL. Call like conv = conv_destroy(conv); to ensure that your object isn't pointing at freed memory.
+
+## Processing Audio
+##### Overview
+Use the previously-created Convolution object to process input data and perform the desired convolution.
+
+##### Process
+```c
+void              conv_process                    (Convolution*  self, 
+                                                   dft_sample_t* input, 
+                                                   int           num_samples);
+                                                   
+```
+Process audio data, perform the desired convolution.
+
+Args:
+* self: A fully initalized Convolution object created with conv_new_optimum_partitioning or similar.
+* input: a float buffer containing the audio data that should be convolved with the previously specified impulse response.
+* num_samples: the number of samples in input. The input buffer can be of any size. It usually makes sense for the input to be the length of the latency specified when creating the object, but it dosen't need to be. It can be longer or shorter. Consequently one call to this function could result in the completion of zero, one or many buffers of convolved output data. Therefore the convolution is not performed 'in-place', and this function does not return any output samples. Instead, the callback specified when creating the Convolution object will be called whenever output data is ready, which could be zero, one or several times when this function is called.
+* callback_self: a pointer to anything, or NULL, that will be passed back as the first argument to output_callback.
+
+Returns: void
+
+## Getting Information
+##### Overview
+Get information about a Convolution object. This is especially useful if the object was created with an optimum partitioning such that the exact details are not known to the caller.
+
+##### Get Latency
+```c
+int               conv_get_latency                (Convolution* self);
+                                                   
+```
+Get the latency, in samples, of the algorithm
+
+Args:
+* self: A fully initalized Convolution object created with conv_new_optimum_partitioning or similar.
+
+Returns: the latency of the specified object
+
+##### Get IR Length
+```c
+int               ir_length           (Convolution* self);
+                                                   
+```
+Get the length in samples of the impulse response. Note that it might be longer than you initially thought, because the end of it might have been zero-padded.
+
+Args:
+* self: A fully initalized Convolution object created with conv_new_optimum_partitioning or similar.
+
+Returns: the number of samples in the (possibly) zero-padded impulse response
+
+##### Get Number of Segments
+```c
+int               conv_get_num_segments           (Convolution* self);
+                                                   
+```
+Get the number of segments in the partitioning
+
+Args:
+* self: A fully initalized Convolution object created with conv_new_optimum_partitioning or similar.
+
+Returns: the number of segments of the specified object, e.g. 1 for uniform partitioning, 2 for a double_FDL, and potentially more for an optimum non-uniform partitioning.
+
+
+##### Get Block Sizes
+```c
+void              conv_get_block_sizes           (Convolution* self, 
+                                                  int*         block_sizes, 
+                                                  int*         blocks_per_segment);
+                                                   
+```
+Get the power-of-two block sizes, and number of blocks per segment, for all of the segments in the partitioning.
+
+Args:
+* self: A fully initalized Convolution object created with conv_new_optimum_partitioning or similar.
+* block_sizes: pointer to an empty array of length conv_get_num_segments(self), where the requested block sizes will be written
+* blocks_per_segment: pointer to an empty array of length conv_get_num_segments(self), where the requested number of blocks per segment will be written
+
+Returns: void
+
+##### Print Partitioning
+```c
+void              conv_print_partitioning        (Convolution* self);
+                                                   
+```
+Convenience function for debugging that prints information about the partitioning to stdout. This function may change or be removed without warning and it isn't recommended to be used in production code.
+
+Args:
+* self: A fully initalized Convolution object created with conv_new_optimum_partitioning or similar.
+
+Returns: void
 
