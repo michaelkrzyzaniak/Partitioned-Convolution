@@ -58,7 +58,7 @@ void output_callback(void* SELF, dft_sample_t* output, int num_samples)
 
 ## Constructors, Destructor
 ##### Overview
-These functions create a Convolution object with the specified impules response, partitioning, and latency. These values are static and cannot be changed after the object has been created. After creation, the object can then be used to process input audio data.
+These functions create a Convolution object with the specified impulse response, partitioning, and latency. These values are static and cannot be changed after the object has been created. After creation, the object can then be used to process input audio data.
 
 ##### New Uniform Partitioning
 ```c
@@ -112,7 +112,7 @@ Convolution*      conv_new_multiple_partitioning (dft_sample_t*          ir,
 
 
 ```
-This function creates a new convolution object with non-uniform partitioning. It will contain a head segment whose block size is equal to latency, and a tail segment whose block size is chosen to be optimal. The number of blocks in each stage is chosen to be optimal.
+This function creates a new convolution object with non-uniform partitioning. You specify how many segments, how many blocks per segment, and the block sizes. Not all partitionings are valid, and it is unlikely that you would choose a good one just by guessing, so in general you wouldn't use this unless you know what you are doing. Usually you would use conv_new_optimum_partitioning() instead.
 
 Args:
 * ir: a buffer containing the impulse response. It may be of any length. dft_sample_t is float. Only Mono IRs are supported.
