@@ -123,3 +123,25 @@ Args:
 * callback_self: a pointer to anything, or NULL, that will be passed back as the first argument to output_callback.
 
 Returns: A fully initalized Convolution object, or NULL on failure.
+
+##### New Optimum Partitoning
+```c
+Convolution*      conv_new_optimum_partitioning  (dft_sample_t*          ir, 
+                                                  int                    ir_len, 
+                                                  int                    latency, 
+                                                  conv_output_callback_t output_callback, 
+                                                  void*                  callback_self);
+
+
+```
+This implements the Viterbi algorithm in the op cit García paper to find the optimum partitioning. It will then return a Convolution object with that partitoning. For low latencies and long IR, the convolution obtained by this method will be much faster than double FDL or uniform block size. Be aware, however, that the Viterbi algorithm that finds the optimum partitioning has high space and time complexity. It will use 2N^2 bytes of space and has a time complexity of O(N^2) where N is ceil(ir_len / latency); N should not be greater than 2^16. In some cases it might make more sense to pre-compute vaules and recall them from a list. In the García paper, the author reports data on partitionings where N=131072 (IR length 131072, Latency 1), which even with some smart use of space requires some 68 GB of memory to compute according to their algorithm, so I'm not sure how it was computed in the year 2002. 
+
+Args:
+* ir: a buffer containing the impulse response. It may be of any length. dft_sample_t is float. Only Mono IRs are supported.
+* ir_len: the number of samples in the impulse response.
+* latency: the desired latecncy of the algorithm. This will also be the block size used in the head segment of the convolution. Decreasing the latency increases the amount of time it takes the algorithm to process a given amount of input. This value must be a power of 2.
+* output_callback: a function that you supply that will be called each time the algorithm has finished processing a bit of the input data.
+* callback_self: a pointer to anything, or NULL, that will be passed back as the first argument to output_callback.
+
+Returns: A fully initalized Convolution object, or NULL on failure.
+
