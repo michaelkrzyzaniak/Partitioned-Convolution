@@ -50,6 +50,7 @@ void   rdft_real_forward_dft    (dft_sample_t* real,  int N);
 void   rdft_real_inverse_dft    (dft_sample_t* real,  int N);
 void   rdft_2_real_forward_dfts (dft_sample_t* real_1, dft_sample_t* real_2, int N);
 void   rdft_2_real_inverse_dfts (dft_sample_t* real_1, dft_sample_t* real_2, int N);
+void   rdft_real_generalized_autocorrelation  (dft_sample_t* real, int N, double exponent);
 
 void   rdft_rect_to_polar       (dft_sample_t* real,  int N);
 void   rdft_polar_to_rect       (dft_sample_t* real,  int N);
